@@ -1,6 +1,32 @@
 extern crate hound;
+//use std::fs;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
+use std::io::{self, /*Read, Write,*/ BufReader, BufWriter};
+
+/*enum Effect {
+  Halftime,
+  Distortion(f32),
+  Reverb(usize, f32),
+  Bitcrush(u32),
+}
+
+impl Effect {
+  fn apply(&self, f_in: &mut File, f_out: &mut File) -> io::Result<()> {
+    match self {
+      Effect::Halftime => half_time(f_in, f_out),
+      Effect::Distortion(dist_val) => apply_distortion(f_in, f_out, *dist_val),
+      Effect::Reverb(delay, decay) => apply_reverb(f_in, f_out, *delay, *decay),
+      Effect::Bitcrush(bits) => apply_bitcrush(f_in, f_out, *bits),
+    }
+  }
+}
+
+fn copy_file(src: &mut File, dst: &mut File) -> io::Result<()> {
+  let mut buffer = Vec::new();
+  src.read_to_end(&mut buffer)?;
+  dst.write_all(&buffer)?;
+  Ok(())
+}*/
 
 fn half_time(f_in: &mut File, f_out: &mut File) -> io::Result<()> {
   let reader = BufReader::new(f_in);
@@ -76,26 +102,59 @@ fn apply_bitcrush(f_in: &mut File, f_out: &mut File, bits: u32) -> io::Result<()
   Ok(())
 }
 
+//TODO: fix this so I can use the enum defined at top of file to pass a list of FX to the audio file
+/*fn apply_effects(f_in: &mut File, f_out: &mut File, effects: &[Effect]) -> io::Result<()> {
+  let mut temp_files: Vec<String> = Vec::new();
+  let mut temp_in = f_in;
+  let mut new_temp_in = None;
+  for (i, fx) in effects.iter().enumerate() {
+      let temp_out_path = format!("audio_out/temp_{}.wav", i);
+      let mut temp_out = File::create(&temp_out_path)?;
+      fx.apply(temp_in, &mut temp_out)?;
+      temp_files.push(temp_out_path.clone());
+      drop(temp_out);
+      new_temp_in = Some(File::open(&temp_out_path)?);
+      std::mem::swap(&mut temp_in, new_temp_in.as_mut().unwrap());
+      fs::remove_file(temp_out_path)?;
+  }
+  copy_file(temp_in, f_out)?;
+  for temp_file in temp_files {
+    fs::remove_file(temp_file)?;
+  }
+  Ok(())
+}*/
+
 fn main() -> io::Result<()> {
   let mut input_file = File::open("audio_in/next.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let mut output_file0 = File::create("audio_out/next_fx_07092024_dist.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file0 = File::create("audio_out/next_fx_07092024_d.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   apply_distortion(&mut input_file, &mut output_file0, 444.0)?;
   drop(input_file);
   drop(output_file0);
-  let mut output_file0 = File::open("audio_out/next_fx_07092024_dist.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let mut output_file1 = File::create("audio_out/next_fx_07092024_ht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file0 = File::open("audio_out/next_fx_07092024_d.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file1 = File::create("audio_out/next_fx_07092024_dht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   half_time(&mut output_file0, &mut output_file1)?;
   drop(output_file0);
   drop(output_file1);
-  let mut output_file1 = File::open("audio_out/next_fx_07092024_ht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let mut output_file2 = File::create("audio_out/next_fx_07092024_reverb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file1 = File::open("audio_out/next_fx_07092024_dht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file2 = File::create("audio_out/next_fx_07092024_dhtr.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   apply_reverb(&mut output_file1, &mut output_file2, 44100, 0.5)?;
   drop(output_file1);
   drop(output_file2);
-  let mut output_file2 = File::open("audio_out/next_fx_07092024_reverb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let mut output_file3 = File::create("audio_out/next_fx_07092024_bitcrush.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file2 = File::open("audio_out/next_fx_07092024_dhtr.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file3 = File::create("audio_out/next_fx_07092024_dhtrb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   apply_bitcrush(&mut output_file2, &mut output_file3, 7)?;
   drop(output_file2);
   drop(output_file3);
+  /*let mut input_file = File::open("audio_in/next.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file4 = File::create("audio_out/next_fx_07092024_fxlist.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let effects_list = vec![
+    Effect::Distortion(444.0),
+    Effect::Halftime,
+    Effect::Reverb(44100, 0.5),
+    Effect::Bitcrush(7),
+  ];
+  apply_effects(&mut input_file, &mut output_file4, &effects_list)?;
+  drop(input_file);
+  drop(output_file4);*/
   Ok(())
 }
