@@ -44,8 +44,7 @@ fn apply_reverb(f_in: &mut File, f_out: &mut File, delay: usize, decay: f32) -> 
   let reader = BufReader::new(f_in);
   let writer = BufWriter::new(f_out);
   let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let spec = reader.spec();
-  let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut writer = hound::WavWriter::new(writer, reader.spec()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
   let mut processed_samples: Vec<f32> = vec![0.0; samples.len() + delay];
   for i in 0..samples.len() {
@@ -56,6 +55,23 @@ fn apply_reverb(f_in: &mut File, f_out: &mut File, delay: usize, decay: f32) -> 
   }
   for sample in processed_samples {
     writer.write_sample(sample.max(-32768.0).min(32767.0) as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  }
+  Ok(())
+}
+
+fn apply_bitcrush(f_in: &mut File, f_out: &mut File, bits: u32) -> io::Result<()> {
+  let reader = BufReader::new(f_in);
+  let writer = BufWriter::new(f_out);
+  let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let spec = reader.spec();
+  let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let max_sample_val = 2.0f32.powi((spec.bits_per_sample as i32) - 1) - 1.0;
+  let step_size = 2.0f32.powi((spec.bits_per_sample as i32) - (bits as i32));
+  for sample in reader.samples::<i16>() {
+    let sample = sample.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let f_sample = sample as f32;
+    let quantized_sample = (f_sample / max_sample_val * step_size).round() * max_sample_val / step_size;
+    writer.write_sample(quantized_sample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   }
   Ok(())
 }
@@ -71,10 +87,15 @@ fn main() -> io::Result<()> {
   half_time(&mut output_file0, &mut output_file1)?;
   drop(output_file0);
   drop(output_file1);
-  let mut output_file1 = File::open("audio_out/next_fx_07092024_dist.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file1 = File::open("audio_out/next_fx_07092024_ht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file2 = File::create("audio_out/next_fx_07092024_reverb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   apply_reverb(&mut output_file1, &mut output_file2, 44100, 0.5)?;
   drop(output_file1);
   drop(output_file2);
+  let mut output_file2 = File::open("audio_out/next_fx_07092024_reverb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file3 = File::create("audio_out/next_fx_07092024_bitcrush.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  apply_bitcrush(&mut output_file2, &mut output_file3, 7)?;
+  drop(output_file2);
+  drop(output_file3);
   Ok(())
 }
