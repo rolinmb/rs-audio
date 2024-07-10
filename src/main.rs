@@ -107,7 +107,7 @@ fn apply_distortion(f_in: &mut File, f_out: &mut File, dist_val: f32) -> io::Res
   Ok(())
 }
 
-fn apply_reverb(f_in: &mut File, f_out: &mut File, reverb_len_ms: f32, decay_ms: f32, damping: f32) -> io::Result<()> {
+fn apply_reverb(f_in: &mut File, f_out: &mut File, reverb_len_ms: f32, decay_factor: f32, damping: f32) -> io::Result<()> {
   let reader = BufReader::new(f_in);
   let writer = BufWriter::new(f_out);
   let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
@@ -118,8 +118,6 @@ fn apply_reverb(f_in: &mut File, f_out: &mut File, reverb_len_ms: f32, decay_ms:
   let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
   let sample_rate = spec.sample_rate as f32;
-  let sample_interval = 1.0 / sample_rate;
-  let decay = 10.0_f32.powf(-3.0 * sample_interval / (decay_ms / 1000.0));
   let reverb_len = (reverb_len_ms / 1000.0 *  sample_rate) as usize;
   let mut processed_samplesl: Vec<f32> = vec![0.0; samples.len() / 2 + reverb_len];
   let mut processed_samplesr: Vec<f32> = vec![0.0; samples.len() / 2 + reverb_len];
@@ -129,8 +127,8 @@ fn apply_reverb(f_in: &mut File, f_out: &mut File, reverb_len_ms: f32, decay_ms:
     processed_samplesl[i] += l_sample;
     processed_samplesr[i] += r_sample;
     if i + reverb_len < processed_samplesl.len() {
-      processed_samplesl[i + reverb_len] += l_sample * decay;
-      processed_samplesr[i + reverb_len] += r_sample * decay;
+      processed_samplesl[i + reverb_len] += l_sample * decay_factor;
+      processed_samplesr[i + reverb_len] += r_sample * decay_factor;
       if i > 0 {
         processed_samplesl[i + reverb_len] = processed_samplesl[i + reverb_len] * (1.0 - damping) + processed_samplesl[i + reverb_len - 1] * damping;
         processed_samplesr[i + reverb_len] = processed_samplesr[i + reverb_len] * (1.0 - damping) + processed_samplesr[i + reverb_len - 1] * damping;
@@ -183,22 +181,29 @@ fn apply_chorus(f_in: &mut File, f_out: &mut File, delay_ms: f32, depth: f32, mo
   Ok(())
 }
 
-//TODO: troubleshoot why this never stops / corrupts data
-/*fn apply_delay(f_in: &mut File, f_out: &mut File, delay_samples: usize, decay: f32) -> io::Result<()> {
+fn apply_delay(f_in: &mut File, f_out: &mut File, delay_ms: f32, decay_factor: f32) -> io::Result<()> {
   let reader = BufReader::new(f_in);
   let writer = BufWriter::new(f_out);
   let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let mut writer = hound::WavWriter::new(writer, reader.spec()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let mut delay_buffer: Vec<f32> = vec![0.0; delay_samples];
-  for sample in reader.samples::<i16>() {
-    let sample = sample.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    let mut delayed_sample = sample as f32;
-    let delayed_val = delay_buffer.remove(0);
-    delay_buffer.push(delayed_sample + decay * delayed_val);
-    writer.write_sample(delayed_sample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let spec = reader.spec();
+  let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
+  let sample_rate = spec.sample_rate as f32;
+  let delay = (delay_ms / 1000.0 * sample_rate) as usize;
+  let mut processed_samples: Vec<f32> = vec![0.0; samples.len() + delay];
+  for i in 0..samples.len() {
+    let sample = samples[i] as f32;
+    processed_samples[i] += sample;
+    if i + delay < processed_samples.len() {
+      processed_samples[i + delay] += sample * decay_factor;
+    }
   }
+  for sample in processed_samples {
+      writer.write_sample(sample.max(-32768.0).min(32767.0) as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  }
+  println!("apply_delay(): Successfully applied");
   Ok(())
-}*/
+}
 
 fn apply_bitcrush(f_in: &mut File, f_out: &mut File, bits: u32) -> io::Result<()> {
   let reader = BufReader::new(f_in);
@@ -261,14 +266,9 @@ fn main() -> io::Result<()> {
   drop(output_file1);
   let mut output_file1 = File::open("audio_out/next_fx_07092024_dht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file2 = File::create("audio_out/next_fx_07092024_dhtr.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  apply_reverb(&mut output_file1, &mut output_file2, 0.42, 0.5, 0.15)?;
+  apply_reverb(&mut output_file1, &mut output_file2, 0.42, 0.69, 0.15)?;
   drop(output_file1);
   drop(output_file2);
-  /*let mut output_file2 = File::open("audio_out/next_fx_07092024_dhtr.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let mut output_file3 = File::create("audio_out/next_fx_07092024_dhtrd.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  apply_delay(&mut output_file2, &mut output_file3, 44100, 0.25)?;
-  drop(output_file2);
-  drop(output_file3);*/
   let mut output_file2 = File::open("audio_out/next_fx_07092024_dhtr.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file3 = File::create("audio_out/next_fx_07092024_dhtrb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   apply_bitcrush(&mut output_file2, &mut output_file3, 2)?;
@@ -279,6 +279,11 @@ fn main() -> io::Result<()> {
   apply_chorus(&mut output_file3, &mut output_file4, 0.333, 0.9, 1.0)?;
   drop(output_file3);
   drop(output_file4);
+  let mut output_file4 = File::open("audio_out/next_fx_07092024_dhtrbc.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file5 = File::create("audio_out/next_fx_07092024_dhtrbcd.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  apply_delay(&mut output_file4, &mut output_file5, 0.1222, 0.5)?;
+  drop(output_file4);
+  drop(output_file5);
   /*let mut input_file = File::open("audio_in/next.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file5 = File::create("audio_out/next_fx_07092024_fxlist.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let effects_list = vec![
