@@ -1,7 +1,32 @@
 extern crate hound;
-//use std::fs;
+use std::io;
+use std::io::{/*Read, Write,*/ BufReader, BufWriter};
+use std::path::Path;
+use std::fs;
 use std::fs::File;
-use std::io::{self, /*Read, Write,*/ BufReader, BufWriter};
+
+const AUDIO_OUT: &str = "audio_out";
+
+fn clear_directory(dir_name: &str) -> io::Result<()> {
+  let dir = Path::new(dir_name);
+  if dir.exists() {
+    println!("clean_directory(): Cleaning directory {}", dir_name);
+    for entry in fs::read_dir(dir)? {
+      let entry = entry?;
+      let path = entry.path();
+      if path.is_dir() {
+        fs::remove_dir_all(&path)?;
+      } else {
+        fs::remove_file(&path)?;
+      }
+    }
+  } else {
+    println!("clean_directory(): Creating directory {}", dir_name);
+    fs::create_dir_all(dir)?;
+  }
+  println!("clean_directory(): Successfully created/cleaned directory {}", dir_name);
+  Ok(())
+}
 
 /*enum Effect {
   Halftime,
@@ -42,6 +67,7 @@ fn half_time(f_in: &mut File, f_out: &mut File) -> io::Result<()> {
     writer.write_sample(f_sample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     writer.write_sample(f_sample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   }
+  println!("half_time(): Successfully applied");
   Ok(())
 }
 
@@ -51,7 +77,7 @@ fn apply_distortion(f_in: &mut File, f_out: &mut File, dist_val: f32) -> io::Res
   let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut writer = hound::WavWriter::new(writer, reader.spec()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   if reader.spec().channels != 2 {
-    return Err(io::Error::new(io::ErrorKind::InvalidInput, "The input file is not stereo"));
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "apply_distortion(): The input file is not stereo"));
   }
   let samples = reader.samples::<i16>();
   let mut sample_iter = samples.map(|sample| sample.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
@@ -65,6 +91,7 @@ fn apply_distortion(f_in: &mut File, f_out: &mut File, dist_val: f32) -> io::Res
     writer.write_sample(fx_lsample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     writer.write_sample(fx_rsample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   }
+  println!("apply_distortion(): Successfully applied");
   Ok(())
 }
 
@@ -74,7 +101,7 @@ fn apply_reverb(f_in: &mut File, f_out: &mut File, time: usize, decay: f32) -> i
   let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut writer = hound::WavWriter::new(writer, reader.spec()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   if reader.spec().channels != 2 {
-    return Err(io::Error::new(io::ErrorKind::InvalidInput, "The input file is not stereo"));
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "apply_reverb(): The input file is not stereo"));
   }
   let samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
   let mut processed_samplesl: Vec<f32> = vec![0.0; samples.len() / 2 + time];
@@ -93,6 +120,7 @@ fn apply_reverb(f_in: &mut File, f_out: &mut File, time: usize, decay: f32) -> i
     writer.write_sample(processed_samplesl[i].max(-32768.0).min(32767.0) as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     writer.write_sample(processed_samplesr[i].max(-32768.0).min(32767.0) as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   }
+  println!("apply_reverb(): Successfully applied");
   Ok(())
 }
 
@@ -119,7 +147,7 @@ fn apply_bitcrush(f_in: &mut File, f_out: &mut File, bits: u32) -> io::Result<()
   let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let spec = reader.spec();
   if spec.channels != 2 {
-    return Err(io::Error::new(io::ErrorKind::InvalidInput, "The input file is not stereo"));
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "apply_bitcrush(): The input file is not stereo"));
   }
   let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let max_sample_val = 2.0f32.powi((spec.bits_per_sample as i32) - 1) - 1.0;
@@ -134,6 +162,7 @@ fn apply_bitcrush(f_in: &mut File, f_out: &mut File, bits: u32) -> io::Result<()
     writer.write_sample(ql_sample).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     writer.write_sample(qr_sample).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   }
+  println!("apply_bitcrush(): Successfully applied");
   Ok(())
 }
 
@@ -160,6 +189,7 @@ fn apply_bitcrush(f_in: &mut File, f_out: &mut File, bits: u32) -> io::Result<()
 }*/
 
 fn main() -> io::Result<()> {
+  clear_directory(AUDIO_OUT)?;
   let mut input_file = File::open("audio_in/next.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file0 = File::create("audio_out/next_fx_07092024_d.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   apply_distortion(&mut input_file, &mut output_file0, 444.0)?;
