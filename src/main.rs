@@ -4,6 +4,7 @@ use std::io::{/*Read, Write,*/ BufReader, BufWriter};
 use std::path::Path;
 use std::fs;
 use std::fs::File;
+use std::f32::consts::PI;
 
 const AUDIO_OUT: &str = "audio_out";
 
@@ -65,7 +66,7 @@ fn half_time(f_in: &mut File, f_out: &mut File) -> io::Result<()> {
   }
   let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let samples = reader.samples::<i16>();
-  let mut sample_iter = samples.map(|sample| sample.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
+  let mut sample_iter = samples.map(|s| s.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
   while let (Some(l_sample), Some(r_sample)) = (sample_iter.next(), sample_iter.next()) {
     let l_sample = l_sample?;
     let r_sample = r_sample?;
@@ -91,7 +92,7 @@ fn apply_distortion(f_in: &mut File, f_out: &mut File, dist_val: f32) -> io::Res
     return Err(io::Error::new(io::ErrorKind::InvalidInput, "apply_distortion(): The input file is not stereo"));
   }
   let samples = reader.samples::<i16>();
-  let mut sample_iter = samples.map(|sample| sample.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
+  let mut sample_iter = samples.map(|s| s.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
   while let (Some(l_sample), Some(r_sample)) = (sample_iter.next(), sample_iter.next()) {
     let l_sample = l_sample?;
     let r_sample = r_sample?;
@@ -135,6 +136,43 @@ fn apply_reverb(f_in: &mut File, f_out: &mut File, time: usize, decay: f32) -> i
   Ok(())
 }
 
+fn apply_chorus(f_in: &mut File, f_out: &mut File, delay: usize, depth: f32, mod_rate: f32) -> io::Result<()> {
+  let reader = BufReader::new(f_in);
+  let writer = BufWriter::new(f_out);
+  let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let spec = reader.spec();
+  if spec.channels != 2 {
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "apply_chorus(): The input file is not stereo"));
+  }
+  let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
+  let sample_rate = spec.sample_rate as f32;
+  let mut delay_bufferl: Vec<f32> = vec![0.0; delay];
+  let mut delay_bufferr: Vec<f32> = vec![0.0; delay];
+  let mut delay_idxl = 0;
+  let mut delay_idxr = 0;
+  let mut l_phase = 0.0;
+  let mut r_phase = PI;
+  for i in 0..(samples.len() / 2) {
+    let l_sample = samples[2 * i] as f32;
+    let r_sample = samples[2 * i + 1] as f32;
+    let l_mod = (depth / 2.0) * (l_phase * 2.0 * PI / sample_rate).sin(); // Phase Modulation
+    let r_mod = (depth / 2.0) * (r_phase * 2.0 * PI / sample_rate).sin();
+    delay_bufferl[delay_idxl] = l_sample + l_mod;
+    delay_bufferr[delay_idxr] = r_sample + r_mod;
+    let delayed_samplel = delay_bufferl[(delay_idxl + delay - (delay as f32 + l_mod) as usize) % delay]; // Delay
+    let delayed_sampler = delay_bufferr[(delay_idxr + delay - (delay as f32 + r_mod) as usize) % delay];
+    writer.write_sample(delayed_samplel.max(-32768.0).min(32767.0) as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    writer.write_sample(delayed_sampler.max(-32768.0).min(32767.0) as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    delay_idxl = (delay_idxl + 1) % delay;
+    delay_idxr = (delay_idxr + 1) % delay;
+    l_phase += mod_rate;
+    r_phase += mod_rate;
+  }
+  println!("apply_chorus(): Successfully applied");
+  Ok(())
+}
+
 //TODO: troubleshoot why this never stops / corrupts data
 /*fn apply_delay(f_in: &mut File, f_out: &mut File, delay_samples: usize, decay: f32) -> io::Result<()> {
   let reader = BufReader::new(f_in);
@@ -164,7 +202,7 @@ fn apply_bitcrush(f_in: &mut File, f_out: &mut File, bits: u32) -> io::Result<()
   let max_sample_val = 2.0f32.powi((spec.bits_per_sample as i32) - 1) - 1.0;
   let step_size = 2.0f32.powi((spec.bits_per_sample as i32) - (bits as i32));
   let samples = reader.samples::<i16>();
-  let mut sample_iter = samples.map(|sample| sample.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
+  let mut sample_iter = samples.map(|s| s.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
   while let (Some(l_sample), Some(r_sample)) = (sample_iter.next(), sample_iter.next()) {
     let l_sample = l_sample?;
     let r_sample = r_sample?;
@@ -223,9 +261,14 @@ fn main() -> io::Result<()> {
   drop(output_file3);*/
   let mut output_file1 = File::open("audio_out/next_fx_07092024_dht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file2 = File::create("audio_out/next_fx_07092024_dhtb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  apply_bitcrush(&mut output_file1, &mut output_file2, 4)?;
+  apply_bitcrush(&mut output_file1, &mut output_file2, 3)?;
   drop(output_file1);
   drop(output_file2);
+  let mut output_file2 = File::open("audio_out/next_fx_07092024_dhtb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file3 = File::create("audio_out/next_fx_07092024_dhtbc.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  apply_chorus(&mut output_file2, &mut output_file3, (0.1 * 44100), 0.75, 0.5)?;
+  drop(output_file2);
+  drop(output_file3);
   /*let mut input_file = File::open("audio_in/next.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file5 = File::create("audio_out/next_fx_07092024_fxlist.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let effects_list = vec![
