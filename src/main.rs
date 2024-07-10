@@ -59,13 +59,24 @@ fn half_time(f_in: &mut File, f_out: &mut File) -> io::Result<()> {
   let reader = BufReader::new(f_in);
   let writer = BufWriter::new(f_out);
   let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let mut writer = hound::WavWriter::new(writer, reader.spec()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  for sample in reader.samples::<i16>() {
-    let sample = sample.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    let mut f_sample = sample as f32;
-    f_sample = f_sample.max(-32768.0).min(32767.0);
-    writer.write_sample(f_sample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    writer.write_sample(f_sample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let spec = reader.spec();
+  if spec.channels != 2 {
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "half_time(): The input file is not stereo"));
+  }
+  let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let samples = reader.samples::<i16>();
+  let mut sample_iter = samples.map(|sample| sample.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
+  while let (Some(l_sample), Some(r_sample)) = (sample_iter.next(), sample_iter.next()) {
+    let l_sample = l_sample?;
+    let r_sample = r_sample?;
+    let mut f_lsample = l_sample as f32;
+    let mut f_rsample = r_sample as f32;
+    f_lsample = f_lsample.max(-32768.0).min(32767.0);
+    f_rsample = f_rsample.max(-32768.0).min(32767.0);
+    writer.write_sample(f_lsample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    writer.write_sample(f_rsample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    writer.write_sample(f_lsample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    writer.write_sample(f_rsample as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   }
   println!("half_time(): Successfully applied");
   Ok(())
@@ -200,21 +211,21 @@ fn main() -> io::Result<()> {
   half_time(&mut output_file0, &mut output_file1)?;
   drop(output_file0);
   drop(output_file1);
-  let mut output_file1 = File::open("audio_out/next_fx_07092024_dht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  /*let mut output_file1 = File::open("audio_out/next_fx_07092024_dht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file2 = File::create("audio_out/next_fx_07092024_dhtr.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   apply_reverb(&mut output_file1, &mut output_file2, 44100, 0.5)?;
   drop(output_file1);
-  drop(output_file2);
+  drop(output_file2);*/
   /*let mut output_file2 = File::open("audio_out/next_fx_07092024_dhtr.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file3 = File::create("audio_out/next_fx_07092024_dhtrd.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   apply_delay(&mut output_file2, &mut output_file3, 44100, 0.25)?;
   drop(output_file2);
   drop(output_file3);*/
-  let mut output_file2 = File::open("audio_out/next_fx_07092024_dhtr.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  let mut output_file3 = File::create("audio_out/next_fx_07092024_dhtrb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  apply_bitcrush(&mut output_file2, &mut output_file3, 3)?;
+  let mut output_file1 = File::open("audio_out/next_fx_07092024_dht.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  let mut output_file2 = File::create("audio_out/next_fx_07092024_dhtb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  apply_bitcrush(&mut output_file1, &mut output_file2, 4)?;
+  drop(output_file1);
   drop(output_file2);
-  drop(output_file3);
   /*let mut input_file = File::open("audio_in/next.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file5 = File::create("audio_out/next_fx_07092024_fxlist.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let effects_list = vec![
