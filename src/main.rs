@@ -186,24 +186,33 @@ fn apply_delay(f_in: &mut File, f_out: &mut File, delay_ms: f32, decay_factor: f
   let writer = BufWriter::new(f_out);
   let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let spec = reader.spec();
+  if spec.channels != 2 {
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "apply_delay(): The input file is not stereo"));
+  }
   let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
   let sample_rate = spec.sample_rate as f32;
   let delay = (delay_ms / 1000.0 * sample_rate) as usize;
-  let mut processed_samples: Vec<f32> = vec![0.0; samples.len() + delay];
-  for i in 0..samples.len() {
-    let sample = samples[i] as f32;
-    processed_samples[i] += sample;
-    if i + delay < processed_samples.len() {
-      processed_samples[i + delay] += sample * decay_factor;
+  let mut processed_samplesl: Vec<f32> = vec![0.0; samples.len() / 2 + delay];
+  let mut processed_samplesr: Vec<f32> = vec![0.0; samples.len() / 2 + delay];
+  for i in 0..(samples.len() / 2) {
+    let l_sample = samples[2 * i] as f32;
+    let r_sample = samples[2 * i + 1] as f32;
+    processed_samplesl[i] += l_sample;
+    processed_samplesr[i] += r_sample;
+    if i + delay < processed_samplesl.len() {
+      processed_samplesl[i + delay] += l_sample * decay_factor;
+      processed_samplesr[i + delay] += r_sample * decay_factor;
     }
   }
-  for sample in processed_samples {
-      writer.write_sample(sample.max(-32768.0).min(32767.0) as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+  for i in 0..(samples.len() / 2) {
+    writer.write_sample(processed_samplesl[i].max(-32768.0).min(32767.0) as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    writer.write_sample(processed_samplesr[i].max(-32768.0).min(32767.0) as i16).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   }
   println!("apply_delay(): Successfully applied");
   Ok(())
 }
+
 
 fn apply_bitcrush(f_in: &mut File, f_out: &mut File, bits: u32) -> io::Result<()> {
   let reader = BufReader::new(f_in);
