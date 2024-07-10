@@ -136,7 +136,7 @@ fn apply_reverb(f_in: &mut File, f_out: &mut File, time: usize, decay: f32) -> i
   Ok(())
 }
 
-fn apply_chorus(f_in: &mut File, f_out: &mut File, delay: usize, depth: f32, mod_rate: f32) -> io::Result<()> {
+fn apply_chorus(f_in: &mut File, f_out: &mut File, delay_ms: f32, depth: f32, mod_rate: f32) -> io::Result<()> {
   let reader = BufReader::new(f_in);
   let writer = BufWriter::new(f_out);
   let mut reader = hound::WavReader::new(reader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
@@ -147,6 +147,7 @@ fn apply_chorus(f_in: &mut File, f_out: &mut File, delay: usize, depth: f32, mod
   let mut writer = hound::WavWriter::new(writer, spec).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
   let sample_rate = spec.sample_rate as f32;
+  let delay = (delay_ms * sample_rate) as usize;
   let mut delay_bufferl: Vec<f32> = vec![0.0; delay];
   let mut delay_bufferr: Vec<f32> = vec![0.0; delay];
   let mut delay_idxl = 0;
@@ -266,7 +267,7 @@ fn main() -> io::Result<()> {
   drop(output_file2);
   let mut output_file2 = File::open("audio_out/next_fx_07092024_dhtb.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
   let mut output_file3 = File::create("audio_out/next_fx_07092024_dhtbc.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-  apply_chorus(&mut output_file2, &mut output_file3, (0.1 * 44100), 0.75, 0.5)?;
+  apply_chorus(&mut output_file2, &mut output_file3, 0.333, 0.9, 1.0)?;
   drop(output_file2);
   drop(output_file3);
   /*let mut input_file = File::open("audio_in/next.wav").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
